@@ -1,7 +1,20 @@
 import clientPromise from "../lib/mongodb.js";
 
 export default async function handler(req, res) {
+
+  // -----------------------
+  // CORS
+  // -----------------------
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Methods", "GET,POST,DELETE,OPTIONS");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  if (req.method === "OPTIONS") {
+    return res.status(200).end();
+  }
+
   try {
+
     const client = await clientPromise;
     const db = client.db("klabo");
     const wishlist = db.collection("wishlist");
@@ -10,6 +23,7 @@ export default async function handler(req, res) {
     // GET WISHLIST
     // -----------------------
     if (req.method === "GET") {
+
       const customerId = String(req.query.customerId || "");
 
       if (!customerId) {
@@ -24,18 +38,20 @@ export default async function handler(req, res) {
         .project({ _id: 0, product: 1 })
         .toArray();
 
-      return res.json({
+      return res.status(200).json({
         success: true,
         products: items
           .map(item => item.product)
-          .filter(Boolean)
+          .filter(Boolean),
       });
+
     }
 
     // -----------------------
     // ADD PRODUCT
     // -----------------------
     if (req.method === "POST") {
+
       const customerId = String(req.body.customerId || "");
       const product = req.body.product;
 
@@ -70,15 +86,17 @@ export default async function handler(req, res) {
         }
       );
 
-      return res.json({
+      return res.status(200).json({
         success: true,
       });
+
     }
 
     // -----------------------
-    // REMOVE PRODUCT
+    // DELETE PRODUCT
     // -----------------------
     if (req.method === "DELETE") {
+
       const customerId = String(req.body.customerId || "");
       const productId = String(req.body.productId || "");
 
@@ -94,9 +112,10 @@ export default async function handler(req, res) {
         "product.id": productId,
       });
 
-      return res.json({
+      return res.status(200).json({
         success: true,
       });
+
     }
 
     return res.status(405).json({
@@ -105,11 +124,14 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
+
     console.error(err);
 
     return res.status(500).json({
       success: false,
       error: err.message,
     });
+
   }
+
 }
