@@ -26,7 +26,9 @@ export default async function handler(req, res) {
 
       return res.json({
         success: true,
-        products: items.map(item => item.product),
+        products: items
+          .map(item => item.product)
+          .filter(Boolean)
       });
     }
 
