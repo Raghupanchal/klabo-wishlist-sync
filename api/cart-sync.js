@@ -45,62 +45,56 @@ export default async function handler(req, res) {
     }
 
     // ===================================
-    // ADD TO CART
+    // SYNC ENTIRE CART
     // ===================================
 
     if (req.method === "POST") {
 
-        const { customerId, product } = req.body;
+        const { customerId, items } = req.body;
 
-        if (!customerId || !product) {
+        if (!customerId || !Array.isArray(items)) {
             return res.status(400).json({
                 success: false,
-                error: "Missing data"
+                error: "Missing customerId or items"
             });
         }
 
-        // Check existing item
-        const { data: existing } = await supabase
+        // Remove existing cart for this customer
+        const { error: deleteError } = await supabase
             .from("cart")
-            .select("*")
-            .eq("customer_id", customerId)
-            .eq("variant_id", product.variantId)
-            .maybeSingle();
+            .delete()
+            .eq("customer_id", customerId);
 
-        if (existing) {
+        if (deleteError) {
+            return res.status(500).json({
+                success: false,
+                error: deleteError.message
+            });
+        }
 
-            const { error } = await supabase
-                .from("cart")
-                .update({
-                    quantity: existing.quantity + 1
-                })
-                .eq("id", existing.id);
-
-            if (error) {
-                return res.status(500).json({
-                    success: false,
-                    error: error.message
-                });
-            }
-
+        // Empty cart? Nothing else to do.
+        if (items.length === 0) {
             return res.json({
                 success: true,
-                quantity: existing.quantity + 1
+                message: "Cart cleared"
             });
         }
+
+        // Prepare rows
+        const rows = items.map(item => ({
+            customer_id: customerId,
+            product_id: String(item.product_id || ""),
+            variant_id: String(item.variant_id || item.id),
+            title: item.product_title || item.title || "",
+            price: String(item.final_price || item.price || 0),
+            image: item.featured_image?.url || item.image || "",
+            url: item.url || (item.handle ? `/products/${item.handle}` : ""),
+            quantity: item.quantity || 1
+        }));
 
         const { error } = await supabase
             .from("cart")
-            .insert({
-                customer_id: customerId,
-                product_id: product.id,
-                variant_id: product.variantId,
-                title: product.title,
-                price: product.price,
-                image: product.image,
-                url: product.url,
-                quantity: 1
-            });
+            .insert(rows);
 
         if (error) {
             return res.status(500).json({
@@ -110,7 +104,8 @@ export default async function handler(req, res) {
         }
 
         return res.json({
-            success: true
+            success: true,
+            count: rows.length
         });
     }
 
