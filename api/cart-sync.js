@@ -86,9 +86,9 @@ export default async function handler(req, res) {
             product_id: String(item.product_id || ""),
             variant_id: String(item.variant_id || item.id),
             title: item.product_title || item.title || "",
-            price: String(item.final_price || item.price || 0),
-            image: item.featured_image?.url || item.image || "",
-            url: item.url || (item.handle ? `/products/${item.handle}` : ""),
+            unit_price: Number(item.final_price || item.price || 0) / 100,
+            image: item.featured_image?.url || item.image || null,
+            url: item.url || (item.handle ? `/products/${item.handle}` : null),
             quantity: item.quantity || 1
         }));
 
