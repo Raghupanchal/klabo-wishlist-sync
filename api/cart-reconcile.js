@@ -1,5 +1,18 @@
 import { supabase } from "../lib/supabase.js";
 
+function generateSignature(items) {
+  if (!items || items.length === 0) {
+    return "";
+  }
+
+  const sorted = [...items].map(item => ({
+    variant_id: String(item.variant_id || item.id || ''),
+    quantity: Number(item.quantity || 0)
+  })).sort((a, b) => a.variant_id.localeCompare(b.variant_id));
+
+  return sorted.map(item => `${item.variant_id}:${item.quantity}`).join('|');
+}
+
 export default async function handler(req, res) {
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader(
@@ -23,17 +36,16 @@ export default async function handler(req, res) {
   }
 
   try {
+    const { customerId, shopifySignature } = req.body;
 
-    const { customerId } = req.body;
-
-    if (!customerId) {
+    if (!customerId || typeof customerId !== "string" || customerId.trim() === "") {
       return res.status(400).json({
         success: false,
-        error: "Missing customerId"
+        error: "Missing or invalid customerId"
       });
     }
 
-    const { data, error } = await supabase
+    const { data: serverItems, error } = await supabase
       .from("cart")
       .select("*")
       .eq("customer_id", customerId)
@@ -46,18 +58,27 @@ export default async function handler(req, res) {
       });
     }
 
+    const serverSignature = generateSignature(serverItems || []);
+
+    if (serverSignature === shopifySignature) {
+      return res.json({
+        same: true
+      });
+    }
+
     return res.json({
-      success: true,
-      items: data || []
+      same: false,
+      serverSignature,
+      serverItems: (serverItems || []).map(item => ({
+        variant_id: String(item.variant_id),
+        quantity: Number(item.quantity)
+      }))
     });
 
   } catch (err) {
-
     return res.status(500).json({
       success: false,
       error: err.message
     });
-
   }
-
 }
