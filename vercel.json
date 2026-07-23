@@ -3,5 +3,16 @@
     "api/*.js": {
       "runtime": "@vercel/node@5.0.0"
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/cart-sync", "destination": "/api/cart-sync" },
+    { "source": "/cart-reconcile", "destination": "/api/cart-reconcile" },
+    { "source": "/wishlist-sync", "destination": "/api/wishlist-sync" },
+    { "source": "/api/cart-sync", "destination": "/api/cart-sync" },
+    { "source": "/api/cart-reconcile", "destination": "/api/cart-reconcile" },
+    { "source": "/api/wishlist-sync", "destination": "/api/wishlist-sync" },
+    { "source": "/apps/klabo-sync/cart-sync", "destination": "/api/cart-sync" },
+    { "source": "/apps/klabo-sync/cart-reconcile", "destination": "/api/cart-reconcile" },
+    { "source": "/apps/klabo-sync/wishlist-sync", "destination": "/api/wishlist-sync" }
+  ]
 }
