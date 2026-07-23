@@ -69,12 +69,13 @@ export default async function handler(req, res) {
       const newVersion = currentVersion + 1;
       await supabase.from("cart").delete().eq("customer_id", customerId);
 
-      if (mergedItems.length > 0) {
-        const rows = mergedItems.map((item) => ({
+      const validRowsToInsert = mergedItems
+        .filter((item) => String(item.variant_id || '').trim() && String(item.product_id || '').trim() && String(item.title || '').trim())
+        .map((item) => ({
           customer_id: customerId,
-          product_id: String(item.product_id || ""),
-          variant_id: String(item.variant_id),
-          title: String(item.title || ""),
+          product_id: String(item.product_id).trim(),
+          variant_id: String(item.variant_id).trim(),
+          title: String(item.title).trim(),
           unit_price: Number(item.unit_price || 0),
           image: item.image || null,
           url: item.url || null,
@@ -83,7 +84,8 @@ export default async function handler(req, res) {
           updated_at: new Date().toISOString()
         }));
 
-        await supabase.from("cart").insert(rows);
+      if (validRowsToInsert.length > 0) {
+        await supabase.from("cart").insert(validRowsToInsert);
       }
     }
 

@@ -1,3 +1,12 @@
--- Standalone migration to add versioning and timestamps to the cart table
-ALTER TABLE cart ADD COLUMN IF NOT EXISTS cart_version BIGINT DEFAULT 1;
-ALTER TABLE cart ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now());
+-- One-time Data Cleanup Migration for KLABO Supabase Database
+-- Run this SQL in your Supabase SQL Editor to purge existing corrupt rows
+
+DELETE FROM cart
+WHERE product_id IS NULL
+   OR product_id = ''
+   OR title IS NULL
+   OR title = ''
+   OR variant_id IS NULL
+   OR variant_id = ''
+   OR variant_id = 'undefined'
+   OR quantity <= 0;

@@ -89,6 +89,16 @@ export default async function handler(req, res) {
         }
         const newVersion = currentVersion + 1;
 
+        // Asynchronously clean up any corrupt rows for this customer in Supabase
+        supabase
+            .from("cart")
+            .delete()
+            .eq("customer_id", customerId)
+            .or("product_id.eq.,title.eq.,variant_id.is.null,quantity.lte.0")
+            .then(({ error: cleanErr }) => {
+                if (cleanErr) console.warn("[CartSync][WARN] Cleanup query error:", cleanErr.message);
+            });
+
         // Perform server-authoritative two-way set union merge with intent-aware conflict resolution
         const mergedItems = clearCart
             ? []
@@ -112,12 +122,13 @@ export default async function handler(req, res) {
             });
         }
 
-        if (mergedItems.length > 0) {
-            const rows = mergedItems.map((item) => ({
+        const validRowsToInsert = mergedItems
+            .filter((item) => String(item.variant_id || '').trim() && String(item.product_id || '').trim() && String(item.title || '').trim())
+            .map((item) => ({
                 customer_id: customerId,
-                product_id: String(item.product_id || ""),
-                variant_id: String(item.variant_id),
-                title: String(item.title || ""),
+                product_id: String(item.product_id).trim(),
+                variant_id: String(item.variant_id).trim(),
+                title: String(item.title).trim(),
                 unit_price: Number(item.unit_price || 0),
                 image: item.image || null,
                 url: item.url || null,
@@ -126,9 +137,10 @@ export default async function handler(req, res) {
                 updated_at: new Date().toISOString()
             }));
 
+        if (validRowsToInsert.length > 0) {
             const { error: insertError } = await supabase
                 .from("cart")
-                .insert(rows);
+                .insert(validRowsToInsert);
 
             if (insertError) {
                 return res.status(500).json({
