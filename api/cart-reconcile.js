@@ -1,19 +1,7 @@
 import { supabase } from "../lib/supabase.js";
 import { handleCors } from "../lib/cors.js";
 import { verifyShopifyAppProxy } from "../lib/shopify-auth.js";
-
-function generateSignature(items) {
-  if (!items || items.length === 0) {
-    return "";
-  }
-
-  const sorted = [...items].map(item => ({
-    variant_id: String(item.variant_id || item.id || ''),
-    quantity: Number(item.quantity || 0)
-  })).sort((a, b) => a.variant_id.localeCompare(b.variant_id));
-
-  return sorted.map(item => `${item.variant_id}:${item.quantity}`).join('|');
-}
+import { mergeCartItems, generateCartSignature } from "../lib/cart-engine.js";
 
 export default async function handler(req, res) {
   if (!handleCors(req, res, { allowedMethods: ["POST", "OPTIONS"] })) {
@@ -37,19 +25,19 @@ export default async function handler(req, res) {
 
   if (auth.isGuest) {
     return res.json({
-      same: true
+      same: true,
+      mergedItems: []
     });
   }
 
   try {
-    const { shopifySignature } = req.body || {};
+    const { shopifyItems = [], isGuestMigration, isExplicitMutation, deletedVariantIds, clearCart } = req.body || {};
     const customerId = auth.customerId;
 
-    const { data: serverItems, error } = await supabase
+    const { data: remoteItems, error } = await supabase
       .from("cart")
       .select("*")
-      .eq("customer_id", customerId)
-      .order("created_at", { ascending: true });
+      .eq("customer_id", customerId);
 
     if (error) {
       return res.status(500).json({
@@ -58,21 +46,55 @@ export default async function handler(req, res) {
       });
     }
 
-    const serverSignature = generateSignature(serverItems || []);
+    let currentVersion = 0;
+    if (remoteItems && remoteItems.length > 0 && remoteItems[0].cart_version !== undefined && remoteItems[0].cart_version !== null) {
+      currentVersion = Number(remoteItems[0].cart_version);
+    }
 
-    if (serverSignature === shopifySignature) {
-      return res.json({
-        same: true
-      });
+    // Perform two-way set union merge with intent-aware conflict resolution
+    const mergedItems = clearCart
+      ? []
+      : mergeCartItems(remoteItems || [], shopifyItems || [], {
+            isGuestMigration,
+            isExplicitMutation,
+            deletedVariantIds,
+            clearCart
+        });
+    const shopifySig = generateCartSignature(shopifyItems || []);
+    const mergedSig = generateCartSignature(mergedItems);
+    const isSame = shopifySig === mergedSig && !isGuestMigration && !isExplicitMutation && !clearCart;
+
+    // If local cart lacks items present on server or requires guest migration merge, persist merged result
+    if (!isSame) {
+      const newVersion = currentVersion + 1;
+      await supabase.from("cart").delete().eq("customer_id", customerId);
+
+      if (mergedItems.length > 0) {
+        const rows = mergedItems.map((item) => ({
+          customer_id: customerId,
+          product_id: String(item.product_id || ""),
+          variant_id: String(item.variant_id),
+          title: String(item.title || ""),
+          unit_price: Number(item.unit_price || 0),
+          image: item.image || null,
+          url: item.url || null,
+          quantity: Math.max(1, Number(item.quantity || 1)),
+          cart_version: newVersion,
+          updated_at: new Date().toISOString()
+        }));
+
+        await supabase.from("cart").insert(rows);
+      }
     }
 
     return res.json({
-      same: false,
-      serverSignature,
-      serverItems: (serverItems || []).map(item => ({
-        variant_id: String(item.variant_id),
-        quantity: Number(item.quantity)
-      }))
+      success: true,
+      same: isSame,
+      version: currentVersion,
+      updatedAt: new Date().toISOString(),
+      serverSignature: mergedSig,
+      serverItems: mergedItems,
+      mergedItems: mergedItems
     });
 
   } catch (err) {

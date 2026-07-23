@@ -45,39 +45,46 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     if (auth.isGuest) {
-      return res.json({ success: true });
+      return res.json({ success: true, products: [] });
     }
 
-    const { product } = req.body || {};
+    const { product, products: incomingProducts } = req.body || {};
+    const itemsToMerge = incomingProducts || (product ? [product] : []);
 
-    if (!product || !product.id) {
+    if (itemsToMerge.length === 0) {
       return res.status(400).json({
         success: false,
-        error: "Missing product data"
+        error: "Missing product or products payload"
       });
     }
 
-    const { error } = await supabase
+    // Fetch existing remote wishlist items
+    const { data: remoteProducts } = await supabase
       .from("wishlist")
-      .upsert({
-        customer_id: customerId,
-        product_id: product.id,
-        variant_id: product.variantId,
-        title: product.title,
-        price: product.price,
-        image: product.image,
-        url: product.url
-      });
+      .select("*")
+      .eq("customer_id", customerId);
 
-    if (error) {
-      return res.status(500).json({
-        success: false,
-        error: error.message
-      });
+    const { mergeWishlistProducts } = await import("../lib/wishlist-engine.js");
+    const mergedList = mergeWishlistProducts(remoteProducts || [], itemsToMerge);
+
+    // Upsert merged list into Supabase
+    for (const p of mergedList) {
+      await supabase
+        .from("wishlist")
+        .upsert({
+          customer_id: customerId,
+          product_id: String(p.id || p.product_id),
+          variant_id: String(p.variantId || p.variant_id || ''),
+          title: String(p.title || ''),
+          price: String(p.price || ''),
+          image: p.image || null,
+          url: p.url || null
+        });
     }
 
     return res.json({
-      success: true
+      success: true,
+      products: mergedList
     });
   }
 
