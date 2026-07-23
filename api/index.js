@@ -1,4 +1,9 @@
+import { handleCors } from "../lib/cors.js";
+
 export default function handler(req, res) {
+  if (!handleCors(req, res, { allowedMethods: ["GET", "OPTIONS"] })) {
+    return;
+  }
   res.status(200).send(`
     <html>
       <head>
