@@ -61,11 +61,25 @@ export default async function handler(req, res) {
             clearCart
         });
     const shopifySig = generateCartSignature(shopifyItems || []);
+    const remoteSig = generateCartSignature(remoteItems || []);
     const mergedSig = generateCartSignature(mergedItems);
+
+    // Calculate decision
+    let decision = "NOOP";
+    if (shopifyItems.length > 0 && (remoteItems.length === 0 || remoteSig !== mergedSig)) {
+      decision = "UPLOAD";
+    } else if (remoteItems.length > 0 && shopifyItems.length === 0 && !clearCart) {
+      decision = "DOWNLOAD";
+    } else if (shopifySig !== mergedSig) {
+      decision = "DOWNLOAD";
+    }
+
     const isSame = shopifySig === mergedSig && !isGuestMigration && !isExplicitMutation && !clearCart;
 
-    // If local cart lacks items present on server or requires guest migration merge, persist merged result
-    if (!isSame) {
+    console.log(`[CartReconcile] Metrics -> Shopify: ${shopifyItems.length} items | Supabase: ${remoteItems.length} items | Merged: ${mergedItems.length} items | Decision: ${decision}`);
+
+    // If Supabase remote state differs from merged result, persist merged result to DB
+    if (remoteSig !== mergedSig || !isSame || isGuestMigration) {
       const newVersion = currentVersion + 1;
       await supabase.from("cart").delete().eq("customer_id", customerId);
 
@@ -92,6 +106,12 @@ export default async function handler(req, res) {
     return res.json({
       success: true,
       same: isSame,
+      decision: decision,
+      metrics: {
+        shopifyItemCount: shopifyItems.length,
+        supabaseItemCount: remoteItems.length,
+        mergedItemCount: mergedItems.length
+      },
       version: currentVersion,
       updatedAt: new Date().toISOString(),
       serverSignature: mergedSig,
