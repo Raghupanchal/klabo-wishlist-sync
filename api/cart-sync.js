@@ -1,21 +1,30 @@
 import { supabase } from "../lib/supabase.js";
 import { handleCors } from "../lib/cors.js";
+import { verifyShopifyAppProxy } from "../lib/shopify-auth.js";
 
 export default async function handler(req, res) {
     if (!handleCors(req, res, { allowedMethods: ["GET", "POST", "PATCH", "DELETE", "OPTIONS"] })) {
         return;
     }
 
+    const auth = verifyShopifyAppProxy(req);
+    if (!auth.isValid) {
+        return res.status(401).json({
+            success: false,
+            error: auth.error
+        });
+    }
+
+    const customerId = auth.customerId;
+
     // ===================================
     // GET CART
     // ===================================
     if (req.method === "GET") {
-        const customerId = req.query.customerId;
-
-        if (!customerId || typeof customerId !== "string" || customerId.trim() === "") {
-            return res.status(400).json({
-                success: false,
-                error: "Missing or invalid customerId"
+        if (auth.isGuest) {
+            return res.json({
+                success: true,
+                items: []
             });
         }
 
@@ -42,14 +51,15 @@ export default async function handler(req, res) {
     // SYNC ENTIRE CART
     // ===================================
     if (req.method === "POST") {
-        const { customerId, items } = req.body;
-
-        if (!customerId || typeof customerId !== "string" || customerId.trim() === "") {
-            return res.status(400).json({
-                success: false,
-                error: "Missing or invalid customerId"
+        if (auth.isGuest) {
+            return res.json({
+                success: true,
+                cartVersion: 0,
+                message: "Guest cart (skipping remote sync)"
             });
         }
+
+        const { items } = req.body || {};
 
         if (!Array.isArray(items)) {
             return res.status(400).json({
@@ -147,12 +157,16 @@ export default async function handler(req, res) {
     // UPDATE QUANTITY
     // ===================================
     if (req.method === "PATCH") {
-        const { customerId, variantId, quantity } = req.body;
+        if (auth.isGuest) {
+            return res.json({ success: true });
+        }
 
-        if (!customerId || !variantId) {
+        const { variantId, quantity } = req.body || {};
+
+        if (!variantId) {
             return res.status(400).json({
                 success: false,
-                error: "Missing customerId or variantId"
+                error: "Missing variantId"
             });
         }
 
@@ -192,12 +206,16 @@ export default async function handler(req, res) {
     // REMOVE ITEM
     // ===================================
     if (req.method === "DELETE") {
-        const { customerId, variantId } = req.body;
+        if (auth.isGuest) {
+            return res.json({ success: true });
+        }
 
-        if (!customerId || !variantId) {
+        const { variantId } = req.body || {};
+
+        if (!variantId) {
             return res.status(400).json({
                 success: false,
-                error: "Missing customerId or variantId"
+                error: "Missing variantId"
             });
         }
 

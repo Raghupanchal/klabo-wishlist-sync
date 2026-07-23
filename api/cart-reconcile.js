@@ -1,5 +1,6 @@
 import { supabase } from "../lib/supabase.js";
 import { handleCors } from "../lib/cors.js";
+import { verifyShopifyAppProxy } from "../lib/shopify-auth.js";
 
 function generateSignature(items) {
   if (!items || items.length === 0) {
@@ -26,15 +27,23 @@ export default async function handler(req, res) {
     });
   }
 
-  try {
-    const { customerId, shopifySignature } = req.body;
+  const auth = verifyShopifyAppProxy(req);
+  if (!auth.isValid) {
+    return res.status(401).json({
+      success: false,
+      error: auth.error
+    });
+  }
 
-    if (!customerId || typeof customerId !== "string" || customerId.trim() === "") {
-      return res.status(400).json({
-        success: false,
-        error: "Missing or invalid customerId"
-      });
-    }
+  if (auth.isGuest) {
+    return res.json({
+      same: true
+    });
+  }
+
+  try {
+    const { shopifySignature } = req.body || {};
+    const customerId = auth.customerId;
 
     const { data: serverItems, error } = await supabase
       .from("cart")
